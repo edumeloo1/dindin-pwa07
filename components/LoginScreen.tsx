@@ -1,78 +1,64 @@
-import React, { useState, useEffect } from 'react';
-import { WalletCards, ArrowRight, Lock, User as UserIcon, LogIn } from 'lucide-react';
+import React, { useState } from 'react';
+import { WalletCards, ArrowRight, Lock, User as UserIcon, Mail } from 'lucide-react';
 import { User } from '../types';
 import { DEFAULT_ACCOUNTS, DEFAULT_CATEGORIES } from '../constants';
+import { auth, db } from '../firebase';
+import { createUserWithEmailAndPassword, signInWithEmailAndPassword } from "firebase/auth";
+import { doc, setDoc } from "firebase/firestore"; 
 
-interface LoginScreenProps {
-  onLogin: (user: User) => void;
-}
-
-const DB_KEY = 'meufinance_db_users';
-const PHOTO_KEY_PREFIX = 'meufinance_photo_';
-
-const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
+const LoginScreen: React.FC = () => {
   const [isRegistering, setIsRegistering] = useState(false);
   const [name, setName] = useState('');
-  const [username, setUsername] = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
 
-  // Auto-seed database if empty
-  useEffect(() => {
-    const storedUsers = localStorage.getItem(DB_KEY);
-    if (!storedUsers) {
-      const defaultUser: User = {
-        id: 'user_default',
-        name: 'Usuário Padrão',
-        username: 'admin',
-        password: 'admin',
-        accounts: DEFAULT_ACCOUNTS,
-        categories: DEFAULT_CATEGORIES,
-      };
-      localStorage.setItem(DB_KEY, JSON.stringify([defaultUser]));
-    }
-  }, []);
-
-
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
-    if (!username || !password) {
+    setLoading(true);
+
+    if (!email || !password) {
       setError('Preencha todos os campos.');
+      setLoading(false);
       return;
     }
 
-    const dbString = localStorage.getItem(DB_KEY);
-    const users: User[] = dbString ? JSON.parse(dbString) : [];
+    try {
+      if (isRegistering) {
+        if (!name) {
+          setError('Nome é obrigatório.');
+          setLoading(false);
+          return;
+        }
+        const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+        const firebaseUser = userCredential.user;
 
-    if (isRegistering) {
-      if (!name) { setError('Nome é obrigatório.'); return; }
-      if (users.find(u => u.username === username)) { setError('Usuário já existe.'); return; }
-
-      const newUser: User = {
-        id: `user_${Date.now()}`,
-        name,
-        username,
-        password, // In a real app, this should be hashed
-        accounts: DEFAULT_ACCOUNTS,
-        categories: DEFAULT_CATEGORIES,
-      };
-      users.push(newUser);
-      localStorage.setItem(DB_KEY, JSON.stringify(users));
-      onLogin(newUser);
-    } else {
-      const user = users.find(u => u.username === username);
-      
-      if (user && user.password === password) {
-        const photoUrl = localStorage.getItem(`${PHOTO_KEY_PREFIX}${user.id}`);
-        const hydratedUser: User = {
-            ...user,
-            photoUrl: photoUrl || undefined,
+        const newUser: Omit<User, 'id'> = {
+          name,
+          username: email.split('@')[0], // Simple username generation
+          email,
+          accounts: DEFAULT_ACCOUNTS,
+          categories: DEFAULT_CATEGORIES,
         };
-        onLogin(hydratedUser);
+        
+        await setDoc(doc(db, "users", firebaseUser.uid), newUser);
+
       } else {
-        setError('Usuário ou senha incorretos.');
+        await signInWithEmailAndPassword(auth, email, password);
       }
+    } catch (err: any) {
+      if (err.code === 'auth/email-already-in-use') {
+        setError('Este email já está em uso.');
+      } else if (err.code === 'auth/wrong-password' || err.code === 'auth/user-not-found' || err.code === 'auth/invalid-credential') {
+        setError('Email ou senha incorretos.');
+      } else {
+        setError('Ocorreu um erro. Tente novamente.');
+      }
+      console.error("Firebase Auth Error:", err);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -97,16 +83,16 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
             </div>
           )}
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Usuário</label>
-            <div className="relative"> <LogIn className="absolute left-3 top-3 w-5 h-5 text-slate-400" /> <input type="text" required className="w-full pl-10 px-4 py-3 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-emerald-500 outline-none" placeholder="usuario123" value={username} onChange={(e) => setUsername(e.target.value)} /> </div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Email</label>
+            <div className="relative"> <Mail className="absolute left-3 top-3 w-5 h-5 text-slate-400" /> <input type="email" required className="w-full pl-10 px-4 py-3 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-emerald-500 outline-none" placeholder="seu@email.com" value={email} onChange={(e) => setEmail(e.target.value)} /> </div>
           </div>
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">Senha</label>
             <div className="relative"> <Lock className="absolute left-3 top-3 w-5 h-5 text-slate-400" /> <input type="password" required className="w-full pl-10 px-4 py-3 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-emerald-500 outline-none" placeholder="******" value={password} onChange={(e) => setPassword(e.target.value)} /> </div>
           </div>
           {error && <p className="text-red-500 text-sm font-medium text-center">{error}</p>}
-          <button type="submit" className="w-full bg-slate-900 text-white font-medium py-3 rounded-lg hover:bg-slate-800 transition-colors flex items-center justify-center gap-2">
-            {isRegistering ? 'Criar Conta' : 'Entrar'} <ArrowRight className="w-4 h-4" />
+          <button type="submit" disabled={loading} className="w-full bg-slate-900 text-white font-medium py-3 rounded-lg hover:bg-slate-800 transition-colors flex items-center justify-center gap-2 disabled:opacity-50">
+            {loading ? 'Processando...' : (isRegistering ? 'Criar Conta' : 'Entrar')} {!loading && <ArrowRight className="w-4 h-4" />}
           </button>
         </form>
         <div className="mt-6 pt-6 border-t border-slate-100 text-center">

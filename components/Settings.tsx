@@ -2,6 +2,8 @@ import React, { useState, useCallback } from 'react';
 import { User, CategoryConfig, Account } from '../types';
 import * as LucideIcons from 'lucide-react';
 import { EMOJI_OPTIONS } from '../constants';
+import { storage } from '../firebase';
+import { ref, uploadString, getDownloadURL } from "firebase/storage";
 
 interface SettingsProps {
   user: User;
@@ -24,6 +26,7 @@ const Settings: React.FC<SettingsProps> = ({ user, onUpdateUser }) => {
   const [name, setName] = useState(user.name);
   const [email, setEmail] = useState(user.email || '');
   const [photoUrl, setPhotoUrl] = useState(user.photoUrl || '');
+  const [isUploading, setIsUploading] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
 
   const [newCategoryName, setNewCategoryName] = useState('');
@@ -32,8 +35,25 @@ const Settings: React.FC<SettingsProps> = ({ user, onUpdateUser }) => {
   const [newAccountName, setNewAccountName] = useState('');
   const [newAccountType, setNewAccountType] = useState<Account['type']>('bank');
 
-  const handleProfileSave = () => {
-    onUpdateUser({ ...user, name, email, photoUrl }, "Perfil salvo com sucesso!");
+  const handleProfileSave = async () => {
+    let finalPhotoUrl = photoUrl;
+    // Check if photoUrl is a new base64 upload
+    if (photoUrl && photoUrl.startsWith('data:image')) {
+      setIsUploading(true);
+      try {
+        const storageRef = ref(storage, `profile_photos/${user.id}`);
+        const snapshot = await uploadString(storageRef, photoUrl, 'data_url');
+        finalPhotoUrl = await getDownloadURL(snapshot.ref);
+        setIsUploading(false);
+      } catch (error) {
+        console.error("Error uploading photo: ", error);
+        setIsUploading(false);
+        // Let onUpdateUser handle the notification
+        onUpdateUser({ ...user }, "Erro ao enviar a foto. Tente uma imagem menor."); 
+        return;
+      }
+    }
+    onUpdateUser({ ...user, name, email, photoUrl: finalPhotoUrl }, "Perfil salvo com sucesso!");
   };
   
   const handleFileSelect = (file: File) => {
@@ -109,8 +129,10 @@ const Settings: React.FC<SettingsProps> = ({ user, onUpdateUser }) => {
               {photoUrl && <button onClick={() => setPhotoUrl('')} className="text-xs text-red-500 hover:underline mt-2 flex items-center gap-1"> <LucideIcons.XCircle className="w-3 h-3"/> Remover Foto </button> }
             </div>
           </div>
-          <div> <label className="block text-sm font-medium text-slate-700 mb-1">Email</label> <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="seu@email.com" className="w-full px-3 py-2 border border-slate-300 rounded-lg"/> </div>
-          <button onClick={handleProfileSave} className="bg-slate-900 text-white px-5 py-2.5 rounded-lg font-semibold text-sm shadow-sm hover:bg-slate-800">Salvar Perfil</button>
+          <div> <label className="block text-sm font-medium text-slate-700 mb-1">Email (Login)</label> <input type="email" value={email} disabled placeholder="seu@email.com" className="w-full px-3 py-2 border border-slate-300 rounded-lg bg-slate-50 text-slate-500 cursor-not-allowed"/> </div>
+          <button onClick={handleProfileSave} disabled={isUploading} className="bg-slate-900 text-white px-5 py-2.5 rounded-lg font-semibold text-sm shadow-sm hover:bg-slate-800 disabled:opacity-50">
+            {isUploading ? 'Enviando foto...' : 'Salvar Perfil'}
+          </button>
         </div>
       )}
 
