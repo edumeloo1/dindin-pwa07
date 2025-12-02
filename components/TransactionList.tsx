@@ -17,6 +17,7 @@ interface TransactionListProps {
 
 const isDueSoon = (transaction: Transaction): boolean => {
   if (transaction.type !== 'expense' && transaction.type !== 'loan_payment') return false;
+  if (transaction.nature !== 'fixed' && !transaction.is_installment) return false;
 
   const today = new Date();
   today.setHours(0, 0, 0, 0);

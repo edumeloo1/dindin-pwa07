@@ -1,5 +1,3 @@
-
-
 // FIX: Added 'loan_payment' to TransactionType to align with its usage as a type of expense throughout the application.
 export type TransactionType = "expense" | "income" | "loan" | "transfer" | "loan_payment";
 export type TransactionNature = "fixed" | "variable" | "extra_income" | "salary" | "loan_payment" | "loan_received" | "installment" | null;
